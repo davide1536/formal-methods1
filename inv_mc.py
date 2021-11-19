@@ -1,7 +1,7 @@
 import pynusmv
 import sys
 
-from pynusmv.prop import not_
+from pynusmv.prop import false, not_
 from pynusmv_lower_interface.nusmv.node.node import is_list_empty
 
 def spec_to_bdd(model, spec):
@@ -34,10 +34,10 @@ def check_explain_inv_spec(spec):
     
     #calcolo la negazione del bdd corrispndende a alla specifica "spec"
     notBddSpec = spec_to_bdd(fsm,pynusmv.prop.not_(spec))
-    print("specifica negata:",notBddSpec )
+    # print("specifica negata:",notBddSpec )
 
     #un po' di print per capire 
-    #for state in fsm.pick_all_states(fsm.init):
+    # for state in fsm.pick_all_states(fsm.init):
     #    print("stati iniziali ", state.get_str_values())
 
     #for state in fsm.pick_all_states(fsm.post(fsm.init)):
@@ -51,12 +51,20 @@ def check_explain_inv_spec(spec):
     #inizio bfs symbolic
     reach = fsm.init
     new = fsm.init
-    
+    while not(new.is_false()):
+        if (new.intersected(notBddSpec)):
+            res = False
+            trace = None
+            return res, trace
+        new = fsm.post(new).diff(reach)
+        reach = reach.union(new)
+    res = True
+    trace = None
 
     #queste 2 righe penso che ce le abbia messe il prof visto che la funzione
     #"check_explain_ltl_spec(ltlspec) fa esattamento quello che richiede l'esercizio"
-    ltlspec = pynusmv.prop.g(spec)
-    res, trace = pynusmv.mc.check_explain_ltl_spec(ltlspec)
+    # ltlspec = pynusmv.prop.g(spec)
+    # res, trace = pynusmv.mc.check_explain_ltl_spec(ltlspec)
 
 
     return res, trace
@@ -67,6 +75,7 @@ if len(sys.argv) != 2:
 
 pynusmv.init.init_nusmv()
 filename = sys.argv[1]
+#filename = "test/switch.smv"
 pynusmv.glob.load_from_file(filename)
 pynusmv.glob.compute_model()
 invtype = pynusmv.prop.propTypes['Invariant']
@@ -84,7 +93,7 @@ for prop in pynusmv.glob.prop_database():
             print("Invariant is respected")
         else:
             print("Invariant is not respected")
-            print(trace)
+            #print(trace)
     else:
         print("Property", spec, "is not an INVARSPEC, skipped.")
    

@@ -23,3 +23,4 @@ INVARSPEC x <= 10
 INVARSPEC mode = off -> x = 0
 INVARSPEC x < 10
 INVARSPEC mode = off
+INVARSPEC mode = off & mode = on
