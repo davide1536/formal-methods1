@@ -47,3 +47,4 @@ MODULE main
         contr   : controller(train_w.out, train_e.out);
         
 INVARSPEC !(train_w.mode = bridge & train_e.mode = bridge)
+INVARSPEC !(train_w.mode = bridge)
