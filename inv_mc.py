@@ -121,7 +121,7 @@ def check_explain_inv_spec(spec):
     res = True
     trace = None
 
-    #queste 2 righe penso che ce le abbia messe il prof visto che la funzione
+    #queste 2 righe penso che ce le abbia messe il prof per i test visto che la funzione
     #"check_explain_ltl_spec(ltlspec)" fa esattamento quello che richiede l'esercizio
     ltlspec = pynusmv.prop.g(spec)
     res, trace = pynusmv.mc.check_explain_ltl_spec(ltlspec)
