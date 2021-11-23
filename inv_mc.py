@@ -1,19 +1,31 @@
 import pynusmv
 import sys
 from pynusmv.dd import StateInputs
+import copy
 
 from pynusmv.prop import false, not_
+from pynusmv_lower_interface.nusmv.enc.bdd.bdd import pick_one_state
 from pynusmv_lower_interface.nusmv.node.node import is_list_empty, llength
 
 def get_path(pathSet, newSet ,fsm):
     i = 1
+    old_state = None
     for i in range(len(newSet)):
         print("iterazione ", i)
         state = fsm.pick_one_state(newSet[i].intersection(pathSet))
-        stateInput = fsm.pick_one_inputs(state)
-        print("lo stato è ", state.get_str_values())
-        print("con input:", stateInput.get_str_values())
+        if i > 0:
+            stateInput = fsm.get_inputs_between_states(state, old_state)
+            #print("possibile input: ",stateInput)
+            #stateInput = get_inputs_between_states(current, state)[0]
+        else:
+            stateInput = fsm.pick_one_inputs(state)
+        if i > 0:
+            print("input: ", fsm.pick_one_inputs(stateInput).get_str_values())
+        print("lo stato è: ", state.get_str_values())
+        #print("con input: ", stateInput.get_str_values())
         preSetBdd = fsm.weak_pre(state)
+        old_state = state
+
         # for state in fsm.pick_all_states(preSetBdd):
         #     print("set con cui è possible raggiungere quello stato è: ", state.get_str_values())
 
@@ -123,7 +135,7 @@ if len(sys.argv) != 2:
 
 pynusmv.init.init_nusmv()
 filename = sys.argv[1]
-#filename = "test/switch.smv"
+#filename = "test/gigamax.smv"
 pynusmv.glob.load_from_file(filename)
 pynusmv.glob.compute_model()
 invtype = pynusmv.prop.propTypes['Invariant']
