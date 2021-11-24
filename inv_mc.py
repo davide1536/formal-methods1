@@ -6,43 +6,45 @@ import copy
 from pynusmv.prop import false, not_
 from pynusmv_lower_interface.nusmv.enc.bdd.bdd import pick_one_state
 from pynusmv_lower_interface.nusmv.node.node import is_list_empty, llength
+def reverse_tuple(tuples):
+    new_tuple = tuples[::-1]
+    return new_tuple
 
-def get_path(pathSet, newSet ,fsm):
-    i = 1
-    old_state = None
-    for i in range(len(newSet)):
-        print("iterazione ", i)
+def get_path(errorState, newSet ,fsm):
+    '''
+    This function computes the path of reacheable state from the error state to the initial state.
+    At iteration i, given a state that belongs to the path to reach the error state, the algorithm computes
+    its pre image, it intersecates this set with the set given by the states discovered at iteration len(newSet) - i
+    where len(newSet) is the number of sets "new" in symbolic bfs algorithm. Thanks to this intersecation in retrieves the next state and repeat the process.
+    This procedure is reapeted for each "new" set. 
+    For more detail watch the report.  
+    '''
+    path = ()
+    state = fsm.pick_one_state(newSet[0].intersection(errorState))
+    path = (state.get_str_values() ,)
+    preSetBdd = fsm.weak_pre(state)
+    next_state = state
+    pathSet = preSetBdd
+    print("lo stato è: ", state.get_str_values())
+
+    for i in range(1,len(newSet)):
+
         state = fsm.pick_one_state(newSet[i].intersection(pathSet))
-        if i > 0:
-            stateInput = fsm.get_inputs_between_states(state, old_state)
-            #print("possibile input: ",stateInput)
-            #stateInput = get_inputs_between_states(current, state)[0]
-        else:
-            stateInput = fsm.pick_one_inputs(state)
-        if i > 0:
-            print("input: ", fsm.pick_one_inputs(stateInput).get_str_values())
-        print("lo stato è: ", state.get_str_values())
-        #print("con input: ", stateInput.get_str_values())
-        preSetBdd = fsm.weak_pre(state)
-        old_state = state
+        stateInput = fsm.get_inputs_between_states(state, next_state)
+       
+        path = path + (fsm.pick_one_inputs(stateInput).get_str_values(),)
+        path = path + (state.get_str_values() ,)
 
-        # for state in fsm.pick_all_states(preSetBdd):
-        #     print("set con cui è possible raggiungere quello stato è: ", state.get_str_values())
+        print("con input: ", fsm.pick_one_inputs(stateInput).get_str_values())
+        print("lo stato è: ", state.get_str_values())
+
+        preSetBdd = fsm.weak_pre(state)
+        next_state = state
 
         pathSet = preSetBdd
 
-    # for state in fsm.pick_all_states(errorBdd):
-    #     print("stato di errore: ", state.get_str_values())
-    # #calcolo la pre immagine debole del set di stati di errore
-    # preSetBdd = fsm.weak_pre(errorBdd)
+    return reverse_tuple(path)
 
-    # for state in fsm.pick_all_states(preSetBdd):
-    #     print("set con cui è possible raggiungere quello di errore: ", state.get_str_values())
-    # print("con input: ", fsm.pick_all_inputs(preSetBdd))
-    # preStateBdd = newSet.intersection(preSetBdd)
-    # print(preStateBdd)
-    # for state in fsm.pick_all_states(preStateBdd):
-    #     print("stato precedente a quello di errore: ", state.get_str_values())
 
 def spec_to_bdd(model, spec):
     """
@@ -69,62 +71,37 @@ def check_explain_inv_spec(spec):
     are their value.
     """
     fsm = pynusmv.glob.prop_database().master.bddFsm
-    # for state in fsm.pick_all_states(fsm.pick_all_states_inputs(fsm.init)):
-    #     print("stati di input per quest bdd: ", state.get_str_values())
-    #trasformo la specifica "spec" in bdd
-    bddspec = spec_to_bdd(fsm, spec)
     
-    #calcolo la negazione del bdd corrispndende a alla specifica "spec"
+    
     notBddSpec = spec_to_bdd(fsm,pynusmv.prop.not_(spec))
-    # print("specifica negata:",notBddSpec )
 
-    #un po' di print per capire 
-    # for state in fsm.pick_all_states(fsm.init):
-    #    print("stati iniziali ", state.get_str_values())
-
-    #for state in fsm.pick_all_states(fsm.post(fsm.init)):
-    #    print("post normale ", state.get_str_values())
-    #
-    #from pynusmv.fsm import BddTrans
-    #trans = BddTrans.from_string(fsm.bddEnc.symbTable,"next(x) = 10")
-    #for state in fsm.pick_all_states(trans.post(fsm.init)):
-        #print("post trans ", state.get_str_values())
-    
-    #inizio bfs symbolic
+    #start symbolic bfs
     setOfnew = []
     reach = fsm.init
     new = fsm.init
     setOfnew.append(new)
 
-    for state in fsm.pick_all_states(fsm.init):
-        print("stati iniziali: ", state.get_str_values())
-    res = True
+    # for state in fsm.pick_all_states(fsm.init):
+    #     print("stati iniziali: ", state.get_str_values())
     while not(new.is_false()):
         if (new.intersected(notBddSpec)):
             setOfnew.reverse()
-            get_path(notBddSpec, setOfnew, fsm)
+            trace = get_path(notBddSpec, setOfnew, fsm)
             res = False
-            trace = None
-            break
+            return res, trace
             # return res, trace
         new = fsm.post(new).diff(reach)
         setOfnew.append(new)
 
-        # for state in fsm.pick_all_states(new):
-        #     print("stati new: ", state.get_str_values())
 
         reach = reach.union(new)
 
-        # for state in fsm.pick_all_states(reach):
-        #     print("stati reach: ", state.get_str_values())
 
     res = True
     trace = None
 
-    #queste 2 righe penso che ce le abbia messe il prof per i test visto che la funzione
-    #"check_explain_ltl_spec(ltlspec)" fa esattamento quello che richiede l'esercizio
-    ltlspec = pynusmv.prop.g(spec)
-    res, trace = pynusmv.mc.check_explain_ltl_spec(ltlspec)
+    # ltlspec = pynusmv.prop.g(spec)
+    # res, trace = pynusmv.mc.check_explain_ltl_spec(ltlspec)
 
 
     return res, trace
@@ -140,10 +117,6 @@ pynusmv.glob.load_from_file(filename)
 pynusmv.glob.compute_model()
 invtype = pynusmv.prop.propTypes['Invariant']
 
-#print(fsm.pick_one_state(fsm.init).get_str_values())
-#for state in fsm.pick_all_states(fsm.post(fsm.init)):
-    #print("state", state.get_str_values())
-#il ciclo serve per controllare ogni proprietà
 i = 0
 for prop in pynusmv.glob.prop_database():
    
@@ -155,7 +128,7 @@ for prop in pynusmv.glob.prop_database():
             print("Invariant is respected")
         else:
             print("Invariant is not respected")
-            print("trace giusta ",trace)
+            print("trace ",trace)
     else:
         print("Property", spec, "is not an INVARSPEC, skipped.")
    
