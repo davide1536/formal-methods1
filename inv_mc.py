@@ -6,9 +6,11 @@ import copy
 from pynusmv.prop import false, not_
 from pynusmv_lower_interface.nusmv.enc.bdd.bdd import pick_one_state
 from pynusmv_lower_interface.nusmv.node.node import is_list_empty, llength
+
 def reverse_tuple(tuples):
     new_tuple = tuples[::-1]
     return new_tuple
+
 
 def get_path(errorState, newSet ,fsm):
     '''
@@ -20,12 +22,16 @@ def get_path(errorState, newSet ,fsm):
     For more detail watch the report.  
     '''
     path = ()
+    path_obj = []
     state = fsm.pick_one_state(newSet[0].intersection(errorState))
+
     path = (state.get_str_values() ,)
+    path_obj.append(state)
+
     preSetBdd = fsm.weak_pre(state)
     next_state = state
     pathSet = preSetBdd
-    print("lo stato è: ", state.get_str_values())
+    print("lo stato è: ", state.get_str_values())       # 1 --- 2 --- 3 --- X  fsm.init()
 
     for i in range(1,len(newSet)):
 
@@ -35,6 +41,10 @@ def get_path(errorState, newSet ,fsm):
         path = path + (fsm.pick_one_inputs(stateInput).get_str_values(),)
         path = path + (state.get_str_values() ,)
 
+        path_obj.append(stateInput)
+        path_obj.append(state)
+
+
         print("con input: ", fsm.pick_one_inputs(stateInput).get_str_values())
         print("lo stato è: ", state.get_str_values())
 
@@ -42,8 +52,23 @@ def get_path(errorState, newSet ,fsm):
         next_state = state
 
         pathSet = preSetBdd
+    
+    path_obj.reverse()
+    return reverse_tuple(path), path_obj
 
-    return reverse_tuple(path)
+
+""" This function verifies the correctness of the path computed by the get_path function """
+def verify_correctness(trace_obj, fsm):
+    if not trace_obj[0].intersected(fsm.init):
+        return False
+    
+    for i in range(0, len(trace_obj) - 2 , 2):
+        next_state = trace_obj[i+2]
+        post_set = fsm.post(trace_obj[i], trace_obj[i+1])
+        if not next_state.intersected(post_set):
+            return False
+    
+    return True
 
 
 def spec_to_bdd(model, spec):
@@ -53,7 +78,8 @@ def spec_to_bdd(model, spec):
     bddspec = pynusmv.mc.eval_ctl_spec(model, spec)
     return bddspec
 
-def check_explain_inv_spec(spec):
+
+def check_explain_inv_spec(spec, fsm):
     """
     Return whether the loaded SMV model satisfies or not the invariant
     `spec`, that is, whether all reachable states of the model satisfies `spec`
@@ -70,25 +96,24 @@ def check_explain_inv_spec(spec):
     where keys are state and inputs variable of the loaded SMV model, and values
     are their value.
     """
-    fsm = pynusmv.glob.prop_database().master.bddFsm
     
     
     notBddSpec = spec_to_bdd(fsm,pynusmv.prop.not_(spec))
 
     #start symbolic bfs
     setOfnew = []
+    trace_obj = []
     reach = fsm.init
     new = fsm.init
     setOfnew.append(new)
-
     # for state in fsm.pick_all_states(fsm.init):
     #     print("stati iniziali: ", state.get_str_values())
     while not(new.is_false()):
         if (new.intersected(notBddSpec)):
             setOfnew.reverse()
-            trace = get_path(notBddSpec, setOfnew, fsm)
+            trace, trace_obj = get_path(notBddSpec, setOfnew, fsm)
             res = False
-            return res, trace
+            return res, trace, trace_obj
             # return res, trace
         new = fsm.post(new).diff(reach)
         setOfnew.append(new)
@@ -104,7 +129,7 @@ def check_explain_inv_spec(spec):
     # res, trace = pynusmv.mc.check_explain_ltl_spec(ltlspec)
 
 
-    return res, trace
+    return res, trace, trace_obj
 
 if len(sys.argv) != 2:
     print("Usage:", sys.argv[0], "filename.smv")
@@ -118,18 +143,32 @@ pynusmv.glob.compute_model()
 invtype = pynusmv.prop.propTypes['Invariant']
 
 i = 0
+
+
+fsm = pynusmv.glob.prop_database().master.bddFsm
+
 for prop in pynusmv.glob.prop_database():
    
     spec = prop.expr
     if prop.type == invtype:
         print("Property", spec, "is an INVARSPEC.")
-        res, trace = check_explain_inv_spec(spec)
+        res, trace, trace_obj = check_explain_inv_spec(spec, fsm)
         if res == True:
             print("Invariant is respected")
         else:
             print("Invariant is not respected")
             print("trace ",trace)
+            correct = verify_correctness(trace_obj, fsm)
+            if correct:
+                print("********** trace is correct **********")
+            else:
+                print("********** trace is not correct **********")
+            
+
     else:
         print("Property", spec, "is not an INVARSPEC, skipped.")
-   
+
+
 pynusmv.init.deinit_nusmv()
+
+    
