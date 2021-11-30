@@ -2,10 +2,14 @@ import pynusmv
 import sys
 from pynusmv.dd import StateInputs
 import copy
+from tabulate import tabulate
+import os
 
 from pynusmv.prop import false, not_
 from pynusmv_lower_interface.nusmv.enc.bdd.bdd import pick_one_state
 from pynusmv_lower_interface.nusmv.node.node import is_list_empty, llength
+
+directory = "test/"
 
 def reverse_tuple(tuples):
     new_tuple = tuples[::-1]
@@ -31,7 +35,6 @@ def get_path(errorState, newSet ,fsm):
     preSetBdd = fsm.weak_pre(state)
     next_state = state
     pathSet = preSetBdd
-    print("lo stato è: ", state.get_str_values())       # 1 --- 2 --- 3 --- X  fsm.init()
 
     for i in range(1,len(newSet)):
 
@@ -44,10 +47,6 @@ def get_path(errorState, newSet ,fsm):
         path_obj.append(stateInput)
         path_obj.append(state)
 
-
-        print("con input: ", fsm.pick_one_inputs(stateInput).get_str_values())
-        print("lo stato è: ", state.get_str_values())
-
         preSetBdd = fsm.weak_pre(state)
         next_state = state
 
@@ -58,8 +57,13 @@ def get_path(errorState, newSet ,fsm):
 
 
 """ This function verifies the correctness of the path computed by the get_path function """
-def verify_correctness(trace_obj, fsm):
+def verify_correctness(trace_obj, fsm, notBddSpec):
+    #check if the initial state belongs to the set of initial states
     if not trace_obj[0].intersected(fsm.init):
+        return False
+    
+    #check if the last state violates the invariant
+    if not trace_obj[len(trace_obj)-1].intersected(notBddSpec):
         return False
     
     for i in range(0, len(trace_obj) - 2 , 2):
@@ -79,7 +83,7 @@ def spec_to_bdd(model, spec):
     return bddspec
 
 
-def check_explain_inv_spec(spec, fsm):
+def check_explain_inv_spec(spec, fsm, notBddSpec):
     """
     Return whether the loaded SMV model satisfies or not the invariant
     `spec`, that is, whether all reachable states of the model satisfies `spec`
@@ -96,7 +100,9 @@ def check_explain_inv_spec(spec, fsm):
     where keys are state and inputs variable of the loaded SMV model, and values
     are their value.
     """
-    
+    ltlspec = pynusmv.prop.g(spec)
+    real_res, trace = pynusmv.mc.check_explain_ltl_spec(ltlspec)
+
     
     notBddSpec = spec_to_bdd(fsm,pynusmv.prop.not_(spec))
 
@@ -113,7 +119,7 @@ def check_explain_inv_spec(spec, fsm):
             setOfnew.reverse()
             trace, trace_obj = get_path(notBddSpec, setOfnew, fsm)
             res = False
-            return res, trace, trace_obj
+            return res,real_res, trace, trace_obj
             # return res, trace
         new = fsm.post(new).diff(reach)
         setOfnew.append(new)
@@ -125,50 +131,95 @@ def check_explain_inv_spec(spec, fsm):
     res = True
     trace = None
 
-    # ltlspec = pynusmv.prop.g(spec)
-    # res, trace = pynusmv.mc.check_explain_ltl_spec(ltlspec)
-
-
-    return res, trace, trace_obj
-
-if len(sys.argv) != 2:
-    print("Usage:", sys.argv[0], "filename.smv")
-    sys.exit(1)
-
-pynusmv.init.init_nusmv()
-filename = sys.argv[1]
-#filename = "test/gigamax.smv"
-pynusmv.glob.load_from_file(filename)
-pynusmv.glob.compute_model()
-invtype = pynusmv.prop.propTypes['Invariant']
-
-i = 0
-
-
-fsm = pynusmv.glob.prop_database().master.bddFsm
-
-for prop in pynusmv.glob.prop_database():
    
-    spec = prop.expr
-    if prop.type == invtype:
-        print("Property", spec, "is an INVARSPEC.")
-        res, trace, trace_obj = check_explain_inv_spec(spec, fsm)
-        if res == True:
-            print("Invariant is respected")
-        else:
-            print("Invariant is not respected")
-            print("trace ",trace)
-            correct = verify_correctness(trace_obj, fsm)
-            if correct:
-                print("********** trace is correct **********")
+
+    return res,real_res, trace, trace_obj
+
+
+#results shown as a table
+def tot_results(file_names, tot_res, tot_real_res, tot_trace_correctness):
+
+    tot_matching = [tot_res[i] == tot_real_res[i] for i in range(len(tot_res))]
+
+    table = []
+    table.append(file_names)                 #table[0]
+    table.append(tot_res)                    #table[1]
+    table.append(tot_real_res)               #table[2]
+    table.append(tot_matching)               #table[3]
+    table.append(tot_trace_correctness)      #table[4]
+
+    res_table = []
+    for i in range(len(file_names)):
+        res_table.append([table[0][i], table[1][i], table[2][i], table[3][i], table[4][i]])
+    
+    print()
+    print(tabulate(res_table, headers= ["filename_invariant", "our_results", "instructor_results", "matching", "trace correctness"], tablefmt='pretty'))
+
+
+#function that automate execution
+def execute_all():
+
+    tot_res = []
+    tot_trace_correctness = []
+    tot_matching = []
+    tot_real_res = []
+    file_names = []
+    
+    for filename in os.listdir(directory):
+        print()
+        print("-"*15 + " I'm running the file: ", filename, "-"*15)
+        print()
+        # if len(sys.argv) != 2:
+        #     print("Usage:", sys.argv[0], "filename.smv")
+        #     sys.exit(1)
+    
+        file_name = filename
+    
+        #filename = sys.argv[1]
+        #filename = "test/gigamax.smv"
+        pynusmv.init.init_nusmv()
+        pynusmv.glob.load_from_file("test/"+filename)
+        pynusmv.glob.compute_model()
+        invtype = pynusmv.prop.propTypes['Invariant']
+
+        i = 1
+
+        fsm = pynusmv.glob.prop_database().master.bddFsm
+
+        for prop in pynusmv.glob.prop_database():
+            if prop.type == invtype:
+                file_name_temp = file_name + "_inv_" + str(i)
+                file_names.append(file_name_temp)
+                spec = prop.expr
+
+                print("Property", spec, "is an INVARSPEC.")
+                notBddSpec = spec_to_bdd(fsm,pynusmv.prop.not_(spec))
+                res,real_res, trace, trace_obj = check_explain_inv_spec(spec, fsm, notBddSpec)
+                tot_res.append(res)
+                tot_real_res.append(real_res)
+                if res == True:
+                    print("Invariant is respected")
+                    print()
+                    tot_trace_correctness.append(None)
+                else:
+                    print("Invariant is not respected")
+                    print("trace ",trace)
+                    correct = verify_correctness(trace_obj, fsm, notBddSpec)
+                    tot_trace_correctness.append(correct)
+                    if correct:
+                        print( "-"*4 + " Trace is correct " + "-"*4)
+                    else:
+                        print("-"*4 +" Trace is not correct "+ "-"*4)
+                    
+                    
+                i = i+1
             else:
-                print("********** trace is not correct **********")
-            
+                print("Property", spec, "is not an INVARSPEC, skipped.")
 
-    else:
-        print("Property", spec, "is not an INVARSPEC, skipped.")
+        print()
+        pynusmv.init.deinit_nusmv()
+    tot_results(file_names, tot_res, tot_real_res, tot_trace_correctness)
 
-
-pynusmv.init.deinit_nusmv()
+execute_all()
 
     
